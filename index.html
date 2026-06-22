@@ -198,17 +198,8 @@
     <div class="chart-container"><canvas id="priceChart"></canvas></div>
   </div>
 
-  <!-- HOMEWIZARD NOTICE -->
-  <div class="hw-notice" id="hwNotice" style="display:none">
-    <strong>💡 HomeWizard instellen — doe dit éénmalig in Chrome</strong><br><br>
-    De pagina is HTTPS maar je HomeWizard is HTTP. Chrome blokkeert dit standaard. Zo los je het op:<br><br>
-    <strong>Stap 1:</strong> Zorg dat je op je thuisnetwerk (WiFi) bent.<br>
-    <strong>Stap 2:</strong> Klik op het <strong>slotje 🔒</strong> links in de adresbalk van Chrome.<br>
-    <strong>Stap 3:</strong> Klik op <strong>"Site-instellingen"</strong>.<br>
-    <strong>Stap 4:</strong> Zoek <strong>"Onveilige inhoud"</strong> → zet op <strong>"Toestaan"</strong>.<br>
-    <strong>Stap 5:</strong> Ververs de pagina (⌘R) — dan laadt HomeWizard automatisch.<br><br>
-    <em>Heb je het IP-adres al ingevuld? Goed, die instelling blijft bewaard. Enkel de Chrome-stap hierboven is nog nodig.</em>
-  </div>
+  <!-- HOMEWIZARD NOTICE (content set dynamically by JS) -->
+  <div class="hw-notice" id="hwNotice" style="display:none"></div>
 
   <footer id="lastUpdate">Nog niet bijgewerkt</footer>
 </div>
@@ -402,19 +393,22 @@ function useDemoData() {
 
 // ─── HOMEWIZARD ───────────────────────────────────────────────────────────────
 async function loadHomeWizard() {
+  const notice = document.getElementById('hwNotice');
   if (!settings.hwIp) {
-    document.getElementById('hwNotice').style.display = 'block';
+    notice.innerHTML = `<strong>💡 HomeWizard IP niet ingesteld</strong><br><br>Ga naar ⚙️ Instellingen en vul het IP-adres in van je HomeWizard P1. Je vindt het in de HomeWizard app → apparaat → ⓘ.`;
+    notice.style.display = 'block';
     setMetric('powerNow', '—', 'W');
     document.getElementById('powerSub').textContent = 'Stel IP in via ⚙️ Instellingen';
     document.getElementById('powerDot').className = 'metric-dot';
     netPowerW = null;
     return;
   }
-  document.getElementById('hwNotice').style.display = 'none';
+  notice.style.display = 'none';
   try {
     const resp = await fetch(`http://${settings.hwIp}/api/v1/data`, {
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(5000)
     });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const d = await resp.json();
     netPowerW = d.active_power_w ?? 0;
     const w = Math.round(netPowerW);
@@ -434,10 +428,28 @@ async function loadHomeWizard() {
   } catch(e) {
     netPowerW = null;
     setMetric('powerNow', '!', '');
-    document.getElementById('powerSub').textContent = 'Niet bereikbaar – zie opmerking ↓';
+    document.getElementById('powerSub').textContent = 'Niet bereikbaar – zie ↓';
     document.getElementById('powerDot').className = 'metric-dot';
-    document.getElementById('hwNotice').style.display = 'block';
-    console.warn('HomeWizard niet bereikbaar:', e.message);
+
+    const ip = settings.hwIp;
+    let detail = '';
+    if (e.name === 'AbortError') {
+      detail = `<strong>Timeout</strong> — <code>${ip}</code> antwoordt niet binnen 5 seconden.<br><br>
+        Mogelijke oorzaken: je bent niet op thuisnetwerk, of het apparaat is offline.`;
+    } else if (e.message && e.message.startsWith('HTTP ')) {
+      detail = `<strong>HTTP-fout ${e.message}</strong> van <code>${ip}</code>.<br><br>
+        De API geeft een foutcode terug. Controleer of de lokale API actief is in de HomeWizard app.`;
+    } else {
+      // TypeError: Failed to fetch → kan CORS of netwerk zijn
+      detail = `<strong>Verbindingsfout</strong> (<em>${e.name}</em>) naar <code>${ip}</code>.<br><br>
+        Meest waarschijnlijke oorzaken:<br>
+        <strong>1.</strong> Je bent niet op je thuisnetwerk (WiFi thuis).<br>
+        <strong>2.</strong> Mixed-content nog niet toegestaan in Chrome — klik op het slotje 🔒 in de adresbalk → Site-instellingen → Onveilige inhoud → Toestaan.<br>
+        <strong>3.</strong> IP-adres incorrect — <a href="#" onclick="openSettings();return false;" style="color:var(--blue)">wijzig via ⚙️</a>.`;
+    }
+    notice.innerHTML = `<strong>⚠️ HomeWizard niet bereikbaar</strong><br><br>${detail}`;
+    notice.style.display = 'block';
+    console.warn('HomeWizard fout:', e.name, e.message);
   }
 }
 
