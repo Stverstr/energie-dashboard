@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ Energie Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --green-bg: #0d2a12;
+    --yellow-bg: #2d2000;
+    --red-bg: #2a0d0d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* GATE */
+  #gate { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:var(--bg); }
+  .gate-logo { font-size:2.5rem; font-weight:800; color:#fff; margin-bottom:2rem; letter-spacing:-1px; }
+  .gate-box { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:2.5rem; width:360px; text-align:center; }
+  .gate-box h2 { color:var(--text); margin-bottom:1.5rem; font-size:1.1rem; font-weight:500; }
+  .gate-input { width:100%; padding:.85rem 1rem; border:1px solid var(--border); border-radius:10px; background:#0d1117; color:#fff; font-size:1rem; margin-bottom:1rem; outline:none; transition:border-color .2s; }
+  .gate-input:focus { border-color:var(--blue); }
+  .gate-btn { width:100%; padding:.85rem; background:var(--blue); color:#fff; border:none; border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity .2s; }
+  .gate-btn:hover { opacity:.85; }
+  .gate-back { margin-top:1rem; font-size:.8rem; color:var(--muted); }
+  .gate-back a { color:var(--blue); text-decoration:none; }
+
+  /* APP */
+  #app { max-width:1100px; margin:0 auto; padding:1.5rem 1rem 3rem; }
+
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:.5rem; }
+  .header-left { display:flex; align-items:center; gap:.75rem; }
+  .header-logo { font-size:1.4rem; font-weight:800; letter-spacing:-0.5px; }
+  .header-subtitle { font-size:.85rem; color:var(--muted); }
+  .header-right { display:flex; align-items:center; gap:1rem; }
+  #clock { font-size:.9rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .refresh-btn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:8px; padding:.4rem .8rem; font-size:.8rem; cursor:pointer; transition:all .2s; }
+  .refresh-btn:hover { border-color:var(--blue); color:var(--blue); }
+  .settings-btn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:8px; padding:.4rem .8rem; font-size:.85rem; cursor:pointer; transition:all .2s; }
+  .settings-btn:hover { border-color:var(--blue); color:var(--blue); }
+
+  /* STATUS CARD */
+  .status-card { border-radius:16px; padding:1.75rem 2rem; margin-bottom:1.5rem; display:flex; align-items:center; gap:1.5rem; transition:all .4s; border:1px solid transparent; }
+  .status-card.green { background:var(--green-bg); border-color:#1a4d1f; }
+  .status-card.yellow { background:var(--yellow-bg); border-color:#5a4000; }
+  .status-card.red { background:var(--red-bg); border-color:#5a1a1a; }
+  .status-card.neutral { background:var(--card); border-color:var(--border); }
+  .status-emoji { font-size:3rem; line-height:1; flex-shrink:0; }
+  .status-content { flex:1; }
+  .status-title { font-size:1.4rem; font-weight:700; margin-bottom:.35rem; }
+  .status-title.green { color:var(--green); }
+  .status-title.yellow { color:var(--yellow); }
+  .status-title.red { color:var(--red); }
+  .status-desc { color:var(--muted); font-size:.95rem; line-height:1.5; }
+  .status-badge { font-size:.75rem; font-weight:600; padding:.2rem .6rem; border-radius:20px; margin-left:.5rem; vertical-align:middle; }
+  .badge-green { background:#0d2a12; color:var(--green); }
+  .badge-yellow { background:var(--yellow-bg); color:var(--yellow); }
+  .badge-red { background:var(--red-bg); color:var(--red); }
+
+  /* METRICS GRID */
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+  .metric-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1.25rem 1.5rem; }
+  .metric-label { font-size:.8rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.5rem; display:flex; align-items:center; gap:.4rem; }
+  .metric-value { font-size:2rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .metric-unit { font-size:1rem; font-weight:400; color:var(--muted); margin-left:.2rem; }
+  .metric-sub { font-size:.8rem; color:var(--muted); margin-top:.4rem; }
+  .metric-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .dot-green { background:var(--green); }
+  .dot-yellow { background:var(--yellow); }
+  .dot-red { background:var(--red); }
+  .dot-blue { background:var(--blue); }
+
+  /* CHART */
+  .chart-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1.5rem; margin-bottom:1.5rem; }
+  .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:.5rem; }
+  .chart-title { font-size:1rem; font-weight:600; }
+  .chart-legend { display:flex; gap:1rem; font-size:.78rem; color:var(--muted); }
+  .legend-item { display:flex; align-items:center; gap:.35rem; }
+  .legend-dot { width:10px; height:10px; border-radius:3px; }
+  .chart-container { position:relative; height:220px; }
+  .demo-badge { font-size:.7rem; background:#1a1a2e; color:var(--blue); border:1px solid var(--blue); border-radius:4px; padding:.15rem .4rem; }
+
+  /* HOMEWIZARD NOTICE */
+  .hw-notice { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; font-size:.85rem; color:var(--muted); line-height:1.6; }
+  .hw-notice strong { color:var(--text); }
+  .hw-notice code { background:#0d1117; padding:.1rem .4rem; border-radius:4px; font-size:.82rem; color:var(--blue); }
+
+  /* SETTINGS MODAL */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:2rem; width:480px; max-width:95vw; max-height:90vh; overflow-y:auto; }
+  .modal h3 { font-size:1.1rem; font-weight:700; margin-bottom:1.5rem; }
+  .form-group { margin-bottom:1.25rem; }
+  .form-label { display:block; font-size:.85rem; color:var(--muted); margin-bottom:.5rem; }
+  .form-input { width:100%; padding:.75rem 1rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:.95rem; outline:none; transition:border-color .2s; }
+  .form-input:focus { border-color:var(--blue); }
+  .form-hint { font-size:.78rem; color:var(--muted); margin-top:.4rem; line-height:1.5; }
+  .modal-btns { display:flex; gap:.75rem; justify-content:flex-end; margin-top:1.5rem; }
+  .btn-cancel { background:none; border:1px solid var(--border); color:var(--muted); border-radius:8px; padding:.6rem 1.2rem; cursor:pointer; }
+  .btn-save { background:var(--blue); color:#fff; border:none; border-radius:8px; padding:.6rem 1.2rem; font-weight:600; cursor:pointer; }
+
+  /* FOOTER */
+  footer { text-align:center; color:var(--muted); font-size:.78rem; margin-top:1rem; }
+
+  @media(max-width:600px) {
+    .status-card { flex-direction:column; text-align:center; }
+    .status-emoji { font-size:2.5rem; }
+    .status-title { font-size:1.2rem; }
+    .metric-value { font-size:1.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PASSWORD GATE -->
+<div id="gate">
+  <div class="gate-logo">⚡ Energie Dashboard</div>
+  <div class="gate-box">
+    <h2>Beveiligde applicatie</h2>
+    <input type="password" id="pwInput" class="gate-input" placeholder="Wachtwoord..."
+      onkeydown="if(event.key==='Enter')checkPw()"/>
+    <button class="gate-btn" onclick="checkPw()">Toegang</button>
+    <div class="gate-back"><a href="https://stverstr.github.io">← Portfolio</a></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+  <header>
+    <div class="header-left">
+      <div>
+        <div class="header-logo">⚡ Energie Dashboard</div>
+        <div class="header-subtitle">EPEX BE · HomeWizard P1 · Enphase</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="clock"></span>
+      <button class="refresh-btn" onclick="refreshAll()">↻ Ververs</button>
+      <button class="settings-btn" onclick="openSettings()">⚙️ Instellingen</button>
+    </div>
+  </header>
+
+  <!-- STATUS -->
+  <div id="statusCard" class="status-card neutral">
+    <div class="status-emoji" id="statusEmoji">⏳</div>
+    <div class="status-content">
+      <div class="status-title" id="statusTitle">Laden...</div>
+      <div class="status-desc" id="statusDesc">Bezig met ophalen van energiedata.</div>
+    </div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-label"><span class="metric-dot dot-yellow" id="priceDot"></span> EPEX prijs nu</div>
+      <div class="metric-value" id="priceNow">—<span class="metric-unit">€/kWh</span></div>
+      <div class="metric-sub" id="priceSub">Laden...</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label"><span class="metric-dot dot-blue" id="powerDot"></span> Netbalans nu</div>
+      <div class="metric-value" id="powerNow">—<span class="metric-unit">W</span></div>
+      <div class="metric-sub" id="powerSub">Configureer HomeWizard IP ↗</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label"><span class="metric-dot dot-green"></span> Goedkoop dit uur</div>
+      <div class="metric-value" id="cheapHours">—<span class="metric-unit">uur</span></div>
+      <div class="metric-sub" id="cheapSub">Laden...</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label"><span class="metric-dot dot-yellow"></span> Gem. prijs vandaag</div>
+      <div class="metric-value" id="avgPrice">—<span class="metric-unit">€/kWh</span></div>
+      <div class="metric-sub" id="avgSub">Laden...</div>
+    </div>
+  </div>
+
+  <!-- PRICE CHART -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">EPEX spotprijs per uur — <span id="chartDateLabel">vandaag</span> <span id="demoBadge" class="demo-badge" style="display:none">DEMO</span></div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Goedkoop</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div>Normaal</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div>Duur</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#58a6ff;border:2px solid #fff"></div>Nu</div>
+      </div>
+    </div>
+    <div class="chart-container"><canvas id="priceChart"></canvas></div>
+  </div>
+
+  <!-- HOMEWIZARD NOTICE -->
+  <div class="hw-notice" id="hwNotice" style="display:none">
+    <strong>💡 HomeWizard netbalans instellen</strong><br>
+    Voer hieronder je HomeWizard P1 IP-adres in (bv. <code>192.168.1.50</code>). De data wordt opgehaald via je lokaal netwerk.<br><br>
+    <strong>Werkt niet?</strong> GitHub Pages is HTTPS, waardoor HTTP-verzoeken naar je thuisnetwerk geblokkeerd worden door je browser.
+    Oplossing: open in Chrome → adresbalk → het slotje → <em>Site-instellingen</em> → <em>Onveilige inhoud</em> → Toestaan.
+    <br><br>
+    Of sla de pagina op als lokale HTML en open ze via <code>file://</code> op je thuisnetwerk.
+  </div>
+
+  <footer id="lastUpdate">Nog niet bijgewerkt</footer>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3>⚙️ Instellingen</h3>
+    <div class="form-group">
+      <label class="form-label">HomeWizard P1 IP-adres</label>
+      <input class="form-input" id="settingHwIp" placeholder="bijv. 192.168.1.50" type="text"/>
+      <div class="form-hint">Vind het IP in de HomeWizard app → apparaat → ⓘ. Geeft realtime netbalans (import/export).</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Drempelprijs "te duur" (€/kWh)</label>
+      <input class="form-input" id="settingThreshold" placeholder="0.15" type="number" step="0.01" min="0" max="1"/>
+      <div class="form-hint">Prijs boven deze waarde = rood signaal. Standaard: €0,15/kWh.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Drempelprijs "goedkoop" (€/kWh)</label>
+      <input class="form-input" id="settingCheap" placeholder="0.05" type="number" step="0.01" min="0" max="1"/>
+      <div class="form-hint">Prijs onder deze waarde = groen signaal. Standaard: €0,05/kWh.</div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeSettings()">Annuleer</button>
+      <button class="btn-save" onclick="saveSettings()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── PASSWORD ────────────────────────────────────────────────────────────────
+const MASTER_HASH = '750db0f147fb55c6755f5b3bb2606a35623b43d03c80056c48587dfa2df45c04';
+async function sha256(s) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join('');
+}
+async function checkPw() {
+  const h = await sha256(document.getElementById('pwInput').value);
+  if (h === MASTER_HASH) {
+    sessionStorage.setItem('auth','1');
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    onAppReady();
+  } else {
+    const i = document.getElementById('pwInput');
+    i.style.borderColor = '#f85149'; i.value = '';
+    setTimeout(() => i.style.borderColor = '#30363d', 700);
+  }
+}
+window.addEventListener('DOMContentLoaded', () => {
+  if (sessionStorage.getItem('auth') === '1') {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    onAppReady();
+  }
+});
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let priceData = [];   // [{hour: Date, price: €/kWh}]
+let netPowerW = null; // null = unknown, positive = from grid, negative = to grid
+let isDemo = false;
+let chart = null;
+let settings = {
+  hwIp: '',
+  threshold: 0.15,
+  cheap: 0.05
+};
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+function onAppReady() {
+  loadSettings();
+  startClock();
+  refreshAll();
+  setInterval(refreshAll, 30000);
+}
+
+async function refreshAll() {
+  await Promise.all([loadPrices(), loadHomeWizard()]);
+  updateStatus();
+  updateLastUpdate();
+}
+
+// ─── CLOCK ───────────────────────────────────────────────────────────────────
+function startClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleDateString('nl-BE', {weekday:'short', day:'numeric', month:'short'}) +
+      ' · ' + now.toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
+  }
+  tick(); setInterval(tick, 10000);
+}
+
+// ─── PRICE DATA (Elia OpenData) ───────────────────────────────────────────────
+async function loadPrices() {
+  try {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const fromStr = today.toISOString().slice(0,10);
+
+    // Elia OpenData – dataset ods030 = Day-ahead prices Belgium
+    const url = `https://opendata.elia.be/api/explore/v2.1/catalog/datasets/ods030/records?` +
+      `limit=48&order_by=datetime%20asc&` +
+      `where=datetime%3E%3D%22${fromStr}%22`;
+
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const json = await resp.json();
+
+    if (!json.results || json.results.length === 0) throw new Error('Empty results');
+
+    // Try different field names Elia might use
+    const raw = json.results.map(r => {
+      const price = r.price1 ?? r.price ?? r.day_ahead_price ?? r.Price ?? r.mip ?? null;
+      return { hour: new Date(r.datetime), price: price != null ? price / 1000 : null };
+    }).filter(r => r.price !== null);
+
+    if (raw.length === 0) throw new Error('No price field found');
+
+    priceData = raw;
+    isDemo = false;
+    document.getElementById('demoBadge').style.display = 'none';
+    updatePriceChart();
+    updatePriceMetrics();
+  } catch(e) {
+    console.warn('Elia API failed, using demo data:', e.message);
+    useDemoData();
+  }
+}
+
+function useDemoData() {
+  isDemo = true;
+  document.getElementById('demoBadge').style.display = 'inline';
+  // Realistic Belgian day-ahead prices (EUR/kWh) – typical shape
+  const base = [.04,.03,.03,.03,.04,.06,.09,.12,.14,.16,.15,.13,.10,.09,.08,.09,.12,.16,.19,.18,.15,.12,.09,.07,
+                 .04,.03,.03,.03,.04,.06,.09,.11,.13,.15,.14,.12,.10,.09,.08,.09,.11,.15,.18,.17,.14,.11,.08,.06];
+  const now = new Date(); now.setMinutes(0,0,0);
+  const start = new Date(now); start.setHours(0);
+  priceData = base.map((p, i) => {
+    const h = new Date(start); h.setHours(i);
+    return { hour: h, price: p + (Math.random() - .5) * .01 };
+  });
+  updatePriceChart();
+  updatePriceMetrics();
+}
+
+// ─── HOMEWIZARD ───────────────────────────────────────────────────────────────
+async function loadHomeWizard() {
+  if (!settings.hwIp) {
+    document.getElementById('hwNotice').style.display = 'block';
+    setMetric('powerNow', '—', 'W');
+    document.getElementById('powerSub').textContent = 'Stel IP in via ⚙️ Instellingen';
+    document.getElementById('powerDot').className = 'metric-dot';
+    netPowerW = null;
+    return;
+  }
+  document.getElementById('hwNotice').style.display = 'none';
+  try {
+    const resp = await fetch(`http://${settings.hwIp}/api/v1/data`, {
+      signal: AbortSignal.timeout(4000)
+    });
+    const d = await resp.json();
+    netPowerW = d.active_power_w ?? 0;
+    const w = Math.round(netPowerW);
+    if (w < 0) {
+      setMetric('powerNow', Math.abs(w).toString(), 'W');
+      document.getElementById('powerSub').textContent = `↑ ${Math.abs(w)} W injectie naar net`;
+      document.getElementById('powerDot').className = 'metric-dot dot-green';
+    } else if (w > 0) {
+      setMetric('powerNow', w.toString(), 'W');
+      document.getElementById('powerSub').textContent = `↓ ${w} W afname van net`;
+      document.getElementById('powerDot').className = 'metric-dot dot-red';
+    } else {
+      setMetric('powerNow', '0', 'W');
+      document.getElementById('powerSub').textContent = 'Balans is nul';
+      document.getElementById('powerDot').className = 'metric-dot dot-green';
+    }
+  } catch(e) {
+    netPowerW = null;
+    setMetric('powerNow', '!', '');
+    document.getElementById('powerSub').textContent = 'Niet bereikbaar – zie opmerking ↓';
+    document.getElementById('powerDot').className = 'metric-dot';
+    document.getElementById('hwNotice').style.display = 'block';
+    console.warn('HomeWizard niet bereikbaar:', e.message);
+  }
+}
+
+// ─── STATUS LOGIC ─────────────────────────────────────────────────────────────
+function updateStatus() {
+  const currentPrice = getCurrentPrice();
+  const card  = document.getElementById('statusCard');
+  const emoji = document.getElementById('statusEmoji');
+  const title = document.getElementById('statusTitle');
+  const desc  = document.getElementById('statusDesc');
+
+  if (!currentPrice) {
+    card.className = 'status-card neutral';
+    emoji.textContent = '⏳'; title.className = 'status-title';
+    title.textContent = 'Nog geen data'; desc.textContent = 'Wacht op prijsdata van Elia...';
+    return;
+  }
+
+  const t = settings.threshold;
+  const c = settings.cheap;
+  const p = currentPrice.price;
+  const w = netPowerW;
+
+  let color, em, ti, de;
+
+  if (w !== null && w < -100) {
+    // Overschot zonnepanelen
+    color = 'green'; em = '☀️';
+    ti = 'Overschot zonnepanelen!';
+    de = `Je injecteert ${Math.abs(Math.round(w))} W naar het net. Perfect moment om je Tesla op te laden — je rijdt gratis op eigen stroom.`;
+  } else if (p <= c) {
+    // Goedkope stroom
+    color = 'green'; em = '💚';
+    ti = 'Goedkope stroom';
+    de = `Prijs is ${fmtPrice(p)}/kWh — onder je drempel van ${fmtPrice(c)}/kWh. Goed moment om de Tesla aan te sluiten${w !== null ? ` (${Math.round(w)} W van net)` : ''}.`;
+  } else if (p < t) {
+    // Matige prijs
+    color = 'yellow'; em = '💛';
+    ti = 'Normale prijs';
+    de = `Prijs is ${fmtPrice(p)}/kWh. Niet duur, maar ook niet goedkoop. ${w !== null ? (w > 0 ? `Je verbruikt ${Math.round(w)} W van het net.` : `Je injecteert ${Math.abs(Math.round(w))} W.`) : 'Controleer je HomeWizard voor netbalans.'}`;
+  } else {
+    // Dure stroom
+    color = 'red'; em = '🚨';
+    ti = 'Dure stroom — verminder verbruik!';
+    de = `Prijs is ${fmtPrice(p)}/kWh — boven je drempel van ${fmtPrice(t)}/kWh. Vermijd het insteken van je Tesla. Zet uitgesteld laden in via de Tesla app.`;
+  }
+
+  card.className = `status-card ${color}`;
+  emoji.textContent = em;
+  title.className = `status-title ${color}`;
+  title.textContent = ti;
+  desc.textContent = de;
+
+  // Demo badge in status?
+  if (isDemo) desc.textContent += ' (DEMO – Elia API niet bereikbaar)';
+}
+
+// ─── PRICE METRICS ────────────────────────────────────────────────────────────
+function updatePriceMetrics() {
+  const cp = getCurrentPrice();
+  if (!cp) return;
+
+  const p = cp.price;
+  const t = settings.threshold;
+  const c = settings.cheap;
+
+  // Current price
+  setMetric('priceNow', fmtPrice(p), '€/kWh');
+  document.getElementById('priceSub').textContent =
+    p <= c ? '🟢 Goedkoop' : p < t ? '🟡 Normaal' : '🔴 Duur';
+  document.getElementById('priceDot').className =
+    `metric-dot ${p <= c ? 'dot-green' : p < t ? 'dot-yellow' : 'dot-red'}`;
+
+  // Today's prices
+  const todayPrices = getTodayPrices();
+  if (todayPrices.length === 0) return;
+
+  const avg = todayPrices.reduce((a,r) => a + r.price, 0) / todayPrices.length;
+  setMetric('avgPrice', fmtPrice(avg), '€/kWh');
+  document.getElementById('avgSub').textContent = `Over ${todayPrices.length} uren`;
+
+  const cheapCount = todayPrices.filter(r => r.price <= c).length;
+  const nextCheap = todayPrices.find(r => r.hour >= new Date() && r.price <= c);
+  setMetric('cheapHours', cheapCount.toString(), 'u');
+  document.getElementById('cheapSub').textContent = nextCheap
+    ? `Volgend goedkoop uur: ${fmtHour(nextCheap.hour)}`
+    : cheapCount === 0 ? 'Geen goedkope uren vandaag' : `${cheapCount} goedkope uren`;
+}
+
+// ─── CHART ────────────────────────────────────────────────────────────────────
+function updatePriceChart() {
+  const todayPrices = getTodayPrices();
+  const tomorrowPrices = getTomorrowPrices();
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  const allPrices = todayPrices.length > 0 ? todayPrices : priceData.slice(0, 24);
+
+  document.getElementById('chartDateLabel').textContent =
+    `vandaag${tomorrowPrices.length > 0 ? ' + morgen' : ''}`;
+
+  const combined = [...allPrices, ...tomorrowPrices];
+  const labels = combined.map(r => {
+    const h = r.hour.getHours();
+    const isTomorrow = r.hour.getDate() !== now.getDate();
+    return isTomorrow ? `+${String(h).padStart(2,'0')}u` : `${String(h).padStart(2,'0')}u`;
+  });
+
+  const colors = combined.map(r => {
+    const p = r.price;
+    const h = r.hour;
+    const isNow = h.getDate() === now.getDate() && h.getHours() === currentHour;
+    if (isNow) return '#58a6ff';
+    if (p <= settings.cheap) return '#3fb950';
+    if (p < settings.threshold) return '#d29922';
+    return '#f85149';
+  });
+
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: combined.map(r => r.price.toFixed(4)),
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${parseFloat(ctx.raw).toFixed(3)} €/kWh`,
+            title: ctx => {
+              const idx = ctx[0].dataIndex;
+              const r = combined[idx];
+              return `${labels[idx]} — ${fmtDate(r.hour)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#21262d' },
+          ticks: { color: '#8b949e', font: { size: 11 }, maxRotation: 0 }
+        },
+        y: {
+          grid: { color: '#21262d' },
+          ticks: {
+            color: '#8b949e', font: { size: 11 },
+            callback: v => `€${parseFloat(v).toFixed(2)}`
+          },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+function loadSettings() {
+  const s = JSON.parse(localStorage.getItem('energySettings') || '{}');
+  settings.hwIp = s.hwIp || '';
+  settings.threshold = s.threshold ?? 0.15;
+  settings.cheap = s.cheap ?? 0.05;
+}
+function saveSettings() {
+  settings.hwIp = document.getElementById('settingHwIp').value.trim();
+  settings.threshold = parseFloat(document.getElementById('settingThreshold').value) || 0.15;
+  settings.cheap = parseFloat(document.getElementById('settingCheap').value) || 0.05;
+  localStorage.setItem('energySettings', JSON.stringify(settings));
+  closeSettings();
+  refreshAll();
+}
+function openSettings() {
+  document.getElementById('settingHwIp').value = settings.hwIp;
+  document.getElementById('settingThreshold').value = settings.threshold;
+  document.getElementById('settingCheap').value = settings.cheap;
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+}
+document.getElementById('settingsModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('settingsModal')) closeSettings();
+});
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function getCurrentPrice() {
+  if (!priceData.length) return null;
+  const now = new Date();
+  return priceData.find(r =>
+    r.hour.getDate() === now.getDate() && r.hour.getHours() === now.getHours()
+  ) || priceData[priceData.length - 1];
+}
+function getTodayPrices() {
+  const now = new Date();
+  return priceData.filter(r => r.hour.getDate() === now.getDate());
+}
+function getTomorrowPrices() {
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  return priceData.filter(r => r.hour.getDate() === tomorrow.getDate());
+}
+function fmtPrice(p) {
+  return `€${p.toFixed(3)}`;
+}
+function fmtHour(d) {
+  return d.toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
+}
+function fmtDate(d) {
+  return d.toLocaleDateString('nl-BE', {weekday:'short', day:'numeric', month:'short'});
+}
+function setMetric(id, val, unit) {
+  document.getElementById(id).innerHTML = val + `<span class="metric-unit">${unit}</span>`;
+}
+function updateLastUpdate() {
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent =
+    `Laatste update: ${fmtHour(now)}${isDemo ? ' · DEMO data (Elia API niet bereikbaar)' : ''}`;
+}
+</script>
+</body>
+</html>
