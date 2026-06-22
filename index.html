@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>⚡ Energie Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #0d1117;
@@ -239,6 +240,43 @@
 </div>
 
 <script>
+// ─── SUPABASE ─────────────────────────────────────────────────────────────────
+const SUPA_URL = 'https://uvodxrrxsxnjlinqrjlw.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2b2R4cnJ4c3huamxpbnFyamx3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1Mjg4MzYsImV4cCI6MjA5NTEwNDgzNn0.1lX4o9zuV0VZJG7S53rdqfbRuic6YnT7g-YPnePavnI';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+async function loadSettingsFromSupabase() {
+  try {
+    const { data, error } = await supa.from('dashboard_settings').select('*').eq('id', 1).single();
+    if (error) throw error;
+    settings.hwIp      = data.hw_ip      ?? '';
+    settings.threshold = parseFloat(data.threshold) ?? 0.15;
+    settings.cheap     = parseFloat(data.cheap)     ?? 0.05;
+  } catch(e) {
+    console.warn('Supabase laden mislukt, fallback naar localStorage:', e.message);
+    const s = JSON.parse(localStorage.getItem('energySettings') || '{}');
+    settings.hwIp      = s.hwIp      || '';
+    settings.threshold = s.threshold ?? 0.15;
+    settings.cheap     = s.cheap     ?? 0.05;
+  }
+}
+
+async function saveSettingsToSupabase() {
+  try {
+    const { error } = await supa.from('dashboard_settings').upsert({
+      id: 1,
+      hw_ip:     settings.hwIp,
+      threshold: settings.threshold,
+      cheap:     settings.cheap,
+      updated_at: new Date().toISOString()
+    });
+    if (error) throw error;
+  } catch(e) {
+    console.warn('Supabase opslaan mislukt, fallback naar localStorage:', e.message);
+    localStorage.setItem('energySettings', JSON.stringify(settings));
+  }
+}
+
 // ─── PASSWORD ────────────────────────────────────────────────────────────────
 const MASTER_HASH = '750db0f147fb55c6755f5b3bb2606a35623b43d03c80056c48587dfa2df45c04';
 async function sha256(s) {
@@ -278,8 +316,8 @@ let settings = {
 };
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
-function onAppReady() {
-  loadSettings();
+async function onAppReady() {
+  await loadSettingsFromSupabase();
   startClock();
   refreshAll();
   setInterval(refreshAll, 30000);
@@ -566,16 +604,13 @@ function updatePriceChart() {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function loadSettings() {
-  const s = JSON.parse(localStorage.getItem('energySettings') || '{}');
-  settings.hwIp = s.hwIp || '';
-  settings.threshold = s.threshold ?? 0.15;
-  settings.cheap = s.cheap ?? 0.05;
+  // Wordt nu async geladen via loadSettingsFromSupabase() in onAppReady
 }
-function saveSettings() {
-  settings.hwIp = document.getElementById('settingHwIp').value.trim();
+async function saveSettings() {
+  settings.hwIp      = document.getElementById('settingHwIp').value.trim();
   settings.threshold = parseFloat(document.getElementById('settingThreshold').value) || 0.15;
-  settings.cheap = parseFloat(document.getElementById('settingCheap').value) || 0.05;
-  localStorage.setItem('energySettings', JSON.stringify(settings));
+  settings.cheap     = parseFloat(document.getElementById('settingCheap').value)     || 0.05;
+  await saveSettingsToSupabase();
   closeSettings();
   refreshAll();
 }
