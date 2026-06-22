@@ -199,12 +199,14 @@
 
   <!-- HOMEWIZARD NOTICE -->
   <div class="hw-notice" id="hwNotice" style="display:none">
-    <strong>💡 HomeWizard netbalans instellen</strong><br>
-    Voer hieronder je HomeWizard P1 IP-adres in (bv. <code>192.168.1.50</code>). De data wordt opgehaald via je lokaal netwerk.<br><br>
-    <strong>Werkt niet?</strong> GitHub Pages is HTTPS, waardoor HTTP-verzoeken naar je thuisnetwerk geblokkeerd worden door je browser.
-    Oplossing: open in Chrome → adresbalk → het slotje → <em>Site-instellingen</em> → <em>Onveilige inhoud</em> → Toestaan.
-    <br><br>
-    Of sla de pagina op als lokale HTML en open ze via <code>file://</code> op je thuisnetwerk.
+    <strong>💡 HomeWizard instellen — doe dit éénmalig in Chrome</strong><br><br>
+    De pagina is HTTPS maar je HomeWizard is HTTP. Chrome blokkeert dit standaard. Zo los je het op:<br><br>
+    <strong>Stap 1:</strong> Zorg dat je op je thuisnetwerk (WiFi) bent.<br>
+    <strong>Stap 2:</strong> Klik op het <strong>slotje 🔒</strong> links in de adresbalk van Chrome.<br>
+    <strong>Stap 3:</strong> Klik op <strong>"Site-instellingen"</strong>.<br>
+    <strong>Stap 4:</strong> Zoek <strong>"Onveilige inhoud"</strong> → zet op <strong>"Toestaan"</strong>.<br>
+    <strong>Stap 5:</strong> Ververs de pagina (⌘R) — dan laadt HomeWizard automatisch.<br><br>
+    <em>Heb je het IP-adres al ingevuld? Goed, die instelling blijft bewaard. Enkel de Chrome-stap hierboven is nog nodig.</em>
   </div>
 
   <footer id="lastUpdate">Nog niet bijgewerkt</footer>
@@ -300,40 +302,48 @@ function startClock() {
   tick(); setInterval(tick, 10000);
 }
 
-// ─── PRICE DATA (Elia OpenData) ───────────────────────────────────────────────
+// ─── PRICE DATA ───────────────────────────────────────────────────────────────
 async function loadPrices() {
+  // 1) EnergyZero API (EPEX day-ahead, CORS-enabled, gratis, geen sleutel nodig)
   try {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const fromStr = today.toISOString().slice(0,10);
-
-    // Elia OpenData – dataset ods030 = Day-ahead prices Belgium
-    const url = `https://opendata.elia.be/api/explore/v2.1/catalog/datasets/ods030/records?` +
-      `limit=48&order_by=datetime%20asc&` +
-      `where=datetime%3E%3D%22${fromStr}%22`;
-
+    const from = new Date(); from.setHours(0,0,0,0);
+    const till = new Date(from); till.setDate(till.getDate() + 2);
+    const url = `https://api.energyzero.nl/v1/energyprices?` +
+      `fromDate=${encodeURIComponent(from.toISOString())}&` +
+      `tillDate=${encodeURIComponent(till.toISOString())}&` +
+      `interval=4&usageType=1&inclBtw=false`;
     const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    const json = await resp.json();
+    const data = await resp.json();
+    if (data.Prices && data.Prices.length > 0) {
+      priceData = data.Prices.map(p => ({ hour: new Date(p.readingDate), price: p.price }));
+      isDemo = false;
+      document.getElementById('demoBadge').style.display = 'none';
+      updatePriceChart(); updatePriceMetrics(); return;
+    }
+  } catch(e) { console.warn('EnergyZero mislukt:', e.message); }
 
-    if (!json.results || json.results.length === 0) throw new Error('Empty results');
+  // 2) Elia OpenData fallback
+  try {
+    const fromStr = new Date().toISOString().slice(0,10);
+    const datasets = ['ods030','ods047','ods001'];
+    for (const ds of datasets) {
+      const url = `https://opendata.elia.be/api/explore/v2.1/catalog/datasets/${ds}/records?limit=48&order_by=datetime%20asc&where=datetime%3E%3D%22${fromStr}%22`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const json = await resp.json();
+      if (!json.results || !json.results.length) continue;
+      const raw = json.results.map(r => {
+        const price = r.price1 ?? r.price ?? r.day_ahead_price ?? r.Price ?? null;
+        return price != null ? { hour: new Date(r.datetime), price: price / 1000 } : null;
+      }).filter(Boolean);
+      if (raw.length > 0) {
+        priceData = raw; isDemo = false;
+        document.getElementById('demoBadge').style.display = 'none';
+        updatePriceChart(); updatePriceMetrics(); return;
+      }
+    }
+  } catch(e) { console.warn('Elia mislukt:', e.message); }
 
-    // Try different field names Elia might use
-    const raw = json.results.map(r => {
-      const price = r.price1 ?? r.price ?? r.day_ahead_price ?? r.Price ?? r.mip ?? null;
-      return { hour: new Date(r.datetime), price: price != null ? price / 1000 : null };
-    }).filter(r => r.price !== null);
-
-    if (raw.length === 0) throw new Error('No price field found');
-
-    priceData = raw;
-    isDemo = false;
-    document.getElementById('demoBadge').style.display = 'none';
-    updatePriceChart();
-    updatePriceMetrics();
-  } catch(e) {
-    console.warn('Elia API failed, using demo data:', e.message);
-    useDemoData();
-  }
+  useDemoData();
 }
 
 function useDemoData() {
