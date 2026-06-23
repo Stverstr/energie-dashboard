@@ -511,13 +511,17 @@ async function sendTeslaCommand(cmd, args) {
     } else if (result.error === 'vehicle_asleep') {
       statusEl.style.color = 'var(--yellow)';
       statusEl.textContent = '💤 Auto kon niet gewekt worden';
+    } else if (result.error === 'rate_limited') {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '⏳ Tesla zegt: wacht even en probeer opnieuw';
     } else {
-      const reason = result.detail?.response?.reason || result.error || '';
+      const reason = result.reason || result.error || '';
       const friendly = {
         'charging': 'Auto laadt niet actief',
         'not_charging': 'Auto laadt niet actief',
         'already_set': 'Waarde al ingesteld',
         'over_limit': 'Boven toegestane limiet',
+        'could_not_wake_buses': 'Auto kon niet gewekt worden',
       }[reason?.toLowerCase()] || (reason || 'Onbekende fout');
       statusEl.style.color = 'var(--red)';
       statusEl.textContent = '✗ ' + friendly;
