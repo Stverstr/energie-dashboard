@@ -182,6 +182,11 @@
       <div class="metric-value" id="avgPrice">—<span class="metric-unit">€/kWh</span></div>
       <div class="metric-sub" id="avgSub">Laden...</div>
     </div>
+    <div class="metric-card">
+      <div class="metric-label"><span class="metric-dot" id="dayCostDot"></span> Dagkost vandaag</div>
+      <div class="metric-value" id="dayCost">—<span class="metric-unit">€</span></div>
+      <div class="metric-sub" id="dayCostSub">Start bridge script thuis</div>
+    </div>
   </div>
 
   <!-- PRICE CHART -->
@@ -196,6 +201,22 @@
       </div>
     </div>
     <div class="chart-container"><canvas id="priceChart"></canvas></div>
+  </div>
+
+  <!-- CONSUMPTION CHART -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">Netto verbruik per uur — vandaag</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div>Afname</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>Injectie</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#58a6ff;border:2px solid #fff"></div>Huidig uur</div>
+      </div>
+    </div>
+    <div class="chart-container"><canvas id="consumptionChart"></canvas></div>
+    <div id="noConsumptionData" style="text-align:center; color:var(--muted); padding:1.5rem; font-size:.85rem;">
+      ⏳ Nog geen verbruiksdata — zorg dat <strong style="color:var(--text)">hw_bridge.py</strong> thuis draait om historische data op te slaan.
+    </div>
   </div>
 
   <!-- HOMEWIZARD NOTICE (content set dynamically by JS) -->
@@ -296,10 +317,12 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
-let priceData = [];   // [{hour: Date, price: €/kWh}]
-let netPowerW = null; // null = unknown, positive = from grid, negative = to grid
+let priceData = [];       // [{hour: Date, price: €/kWh}]
+let netPowerW = null;     // null = unknown, positive = from grid, negative = to grid
 let isDemo = false;
 let chart = null;
+let consumptionChart = null;
+let hourlyData = [];      // [{hour: 0-23, import_kwh, export_kwh, net_kwh}]
 let settings = {
   hwIp: '',
   threshold: 0.15,
@@ -315,7 +338,7 @@ async function onAppReady() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadPrices(), loadHomeWizard()]);
+  await Promise.all([loadPrices(), loadHomeWizard(), loadEnergyHistory()]);
   updateStatus();
   updateLastUpdate();
 }
@@ -451,6 +474,137 @@ async function loadHomeWizard() {
     notice.style.display = 'block';
     console.warn('HomeWizard fout:', e.name, e.message);
   }
+}
+
+// ─── ENERGY HISTORY (via Supabase, gevoed door bridge script) ────────────────
+async function loadEnergyHistory() {
+  try {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const url = `${SUPA_URL}/rest/v1/energy_readings` +
+      `?ts=gte.${encodeURIComponent(today.toISOString())}` +
+      `&ts=lt.${encodeURIComponent(tomorrow.toISOString())}` +
+      `&order=ts.asc&select=ts,import_kwh,export_kwh`;
+
+    const resp = await fetch(url, {
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Accept': 'application/json'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    const readings = await resp.json();
+
+    if (!Array.isArray(readings) || readings.length < 2) {
+      document.getElementById('noConsumptionData').style.display = 'block';
+      document.getElementById('consumptionChart').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('noConsumptionData').style.display = 'none';
+    document.getElementById('consumptionChart').style.display = 'block';
+
+    hourlyData = calcHourlyDeltas(readings);
+    updateConsumptionChart();
+    updateDayCost();
+
+  } catch(e) {
+    console.warn('Energy history laden mislukt:', e.message);
+  }
+}
+
+function calcHourlyDeltas(readings) {
+  const byHour = {};
+  readings.forEach(r => {
+    const h = new Date(r.ts).getHours();
+    if (!byHour[h]) byHour[h] = [];
+    byHour[h].push(r);
+  });
+  const result = [];
+  for (let h = 0; h < 24; h++) {
+    const hrs = byHour[h];
+    if (!hrs || hrs.length < 2) continue;
+    const first = hrs[0], last = hrs[hrs.length - 1];
+    const di = (last.import_kwh || 0) - (first.import_kwh || 0);
+    const de = (last.export_kwh || 0) - (first.export_kwh || 0);
+    result.push({ hour: h, import_kwh: di, export_kwh: de, net_kwh: di - de });
+  }
+  return result;
+}
+
+function updateConsumptionChart() {
+  const labels = [], values = [], colors = [];
+  const now = new Date();
+  for (let h = 0; h < 24; h++) {
+    const d = hourlyData.find(x => x.hour === h);
+    labels.push(`${String(h).padStart(2,'0')}u`);
+    const val = d ? parseFloat(d.net_kwh.toFixed(3)) : null;
+    values.push(val);
+    const isNow = h === now.getHours() && now.getDate() === new Date().getDate();
+    if (isNow) colors.push('#58a6ff');
+    else if (val === null) colors.push('#21262d');
+    else if (val < 0) colors.push('#3fb950');
+    else colors.push('#f85149');
+  }
+
+  const ctx = document.getElementById('consumptionChart').getContext('2d');
+  if (consumptionChart) consumptionChart.destroy();
+  consumptionChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: colors, borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.raw;
+              if (v === null) return ' Geen data';
+              return v < 0
+                ? ` ${Math.abs(v).toFixed(3)} kWh → injectie naar net`
+                : ` ${v.toFixed(3)} kWh ← afname van net`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: '#21262d' }, ticks: { color: '#8b949e', font: { size: 11 }, maxRotation: 0 } },
+        y: {
+          grid: { color: '#21262d' },
+          ticks: { color: '#8b949e', font: { size: 11 }, callback: v => `${v > 0 ? '+' : ''}${parseFloat(v).toFixed(2)} kWh` }
+        }
+      }
+    }
+  });
+}
+
+function updateDayCost() {
+  if (hourlyData.length === 0 || priceData.length === 0) return;
+  const today = new Date(); today.setHours(0,0,0,0);
+  let total = 0, count = 0;
+  hourlyData.forEach(d => {
+    const match = priceData.find(p => {
+      const ph = new Date(p.hour);
+      return ph.toDateString() === today.toDateString() && ph.getHours() === d.hour;
+    });
+    if (match) { total += d.net_kwh * match.price; count++; }
+  });
+  if (count === 0) return;
+  const absStr = Math.abs(total).toFixed(2);
+  document.getElementById('dayCost').innerHTML =
+    `${total < 0 ? '-' : ''}${absStr}<span class="metric-unit">€</span>`;
+  document.getElementById('dayCostSub').textContent =
+    total < 0
+      ? `${count}u berekend · je verdiende €${absStr}`
+      : `${count}u berekend · nettokost`;
+  document.getElementById('dayCostDot').className =
+    `metric-dot ${total < 0 ? 'dot-green' : total < 1 ? 'dot-yellow' : 'dot-red'}`;
 }
 
 // ─── STATUS LOGIC ─────────────────────────────────────────────────────────────
