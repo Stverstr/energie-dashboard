@@ -456,6 +456,7 @@ function updateTeslaCard(data, status) {
       Stopped:      '⏸ Laden gestopt',
       NoPower:      '⚠️ Geen stroom'
     };
+    teslaChargingState = cs.charging_state;
     sub.textContent = states[cs.charging_state] || cs.charging_state;
 
     // Toon controls met huidige waarden
@@ -475,8 +476,23 @@ function updateTeslaCard(data, status) {
 }
 
 let cmdBusy = false;
+let teslaChargingState = null; // bijhouden vanuit updateTeslaCard
+
 async function sendTeslaCommand(cmd, args) {
   if (cmdBusy) return;
+
+  // Laadstroom aanpassen kan alleen als er actief geladen wordt
+  if (cmd === 'set_charging_amps') {
+    const activeStates = ['Charging', 'Starting'];
+    if (!activeStates.includes(teslaChargingState)) {
+      const statusEl = document.getElementById('cmdStatus');
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '⚠️ Auto laadt niet — instelling wordt bewaard voor volgende laadsessie';
+      setTimeout(() => { statusEl.textContent = ''; }, 5000);
+      // Stuur toch het commando (Tesla onthoudt de voorkeur)
+    }
+  }
+
   cmdBusy = true;
   const statusEl = document.getElementById('cmdStatus');
   statusEl.style.color = 'var(--muted)';
@@ -486,7 +502,7 @@ async function sendTeslaCommand(cmd, args) {
       method: 'POST',
       headers: TESLA_HEADERS,
       body: JSON.stringify({ cmd, args }),
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(35000)
     });
     const result = await resp.json();
     if (result.ok) {
@@ -496,15 +512,22 @@ async function sendTeslaCommand(cmd, args) {
       statusEl.style.color = 'var(--yellow)';
       statusEl.textContent = '💤 Auto kon niet gewekt worden';
     } else {
+      const reason = result.detail?.response?.reason || result.error || '';
+      const friendly = {
+        'charging': 'Auto laadt niet actief',
+        'not_charging': 'Auto laadt niet actief',
+        'already_set': 'Waarde al ingesteld',
+        'over_limit': 'Boven toegestane limiet',
+      }[reason?.toLowerCase()] || (reason || 'Onbekende fout');
       statusEl.style.color = 'var(--red)';
-      statusEl.textContent = '✗ ' + (result.detail?.response?.reason || result.error || 'Fout');
+      statusEl.textContent = '✗ ' + friendly;
     }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = '✗ Verbindingsfout';
   } finally {
     cmdBusy = false;
-    setTimeout(() => { if(statusEl) statusEl.textContent = ''; }, 4000);
+    setTimeout(() => { if(statusEl) statusEl.textContent = ''; }, 5000);
   }
 }
 
