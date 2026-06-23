@@ -187,10 +187,47 @@
       <div class="metric-value" id="dayCost">—<span class="metric-unit">€</span></div>
       <div class="metric-sub" id="dayCostSub">Start bridge script thuis</div>
     </div>
-    <div class="metric-card">
-      <div class="metric-label"><span class="metric-dot" id="teslaDot"></span> Tesla batterij</div>
-      <div class="metric-value" id="teslaBattery">—<span class="metric-unit">%</span></div>
-      <div class="metric-sub" id="teslaSub"><a href="#" onclick="startTeslaOAuth();return false;" style="color:var(--blue)">🔗 Verbind Tesla</a></div>
+    <div class="metric-card" id="teslaCard" style="grid-column: span 2;">
+      <div style="display:flex;align-items:flex-start;gap:1.5rem;flex-wrap:wrap;">
+        <div style="flex:0 0 auto;min-width:120px;">
+          <div class="metric-label"><span class="metric-dot" id="teslaDot"></span> Tesla batterij</div>
+          <div class="metric-value" id="teslaBattery">—<span class="metric-unit">%</span></div>
+          <div class="metric-sub" id="teslaSub"><a href="#" onclick="startTeslaOAuth();return false;" style="color:var(--blue)">🔗 Verbind Tesla</a></div>
+        </div>
+        <div id="teslaControls" style="display:none;flex:1;min-width:220px;border-left:1px solid var(--border);padding-left:1.5rem;">
+          <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;">Laadcontroles</div>
+          <!-- Laadlimiet -->
+          <div style="margin-bottom:.85rem;">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);margin-bottom:.3rem;">
+              <span>Laadlimiet</span><span id="limitDisplay" style="color:var(--text);font-weight:600;">—%</span>
+            </div>
+            <input type="range" id="limitSlider" min="50" max="100" step="5" value="80"
+              style="width:100%;accent-color:var(--blue);cursor:pointer;"
+              oninput="document.getElementById('limitDisplay').textContent=this.value+'%'"
+              onchange="sendTeslaCommand('set_charge_limit',{percent:parseInt(this.value)})"/>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.15rem;"><span>50%</span><span>80%</span><span>100%</span></div>
+          </div>
+          <!-- Laadstroom -->
+          <div style="margin-bottom:.85rem;">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);margin-bottom:.3rem;">
+              <span>Laadstroom</span><span id="ampsDisplay" style="color:var(--text);font-weight:600;">— A</span>
+            </div>
+            <input type="range" id="ampsSlider" min="6" max="16" step="2" value="16"
+              style="width:100%;accent-color:var(--green);cursor:pointer;"
+              oninput="document.getElementById('ampsDisplay').textContent=this.value+' A'"
+              onchange="sendTeslaCommand('set_charging_amps',{charging_amps:parseInt(this.value)})"/>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.15rem;"><span>6A</span><span>11A</span><span>16A</span></div>
+          </div>
+          <!-- Start / Stop knoppen -->
+          <div style="display:flex;gap:.5rem;">
+            <button onclick="sendTeslaCommand('charge_start',{})"
+              style="flex:1;padding:.5rem;background:var(--green);color:#000;border:none;border-radius:8px;font-size:.8rem;font-weight:700;cursor:pointer;">▶ Start laden</button>
+            <button onclick="sendTeslaCommand('charge_stop',{})"
+              style="flex:1;padding:.5rem;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;">⏸ Stop laden</button>
+          </div>
+          <div id="cmdStatus" style="font-size:.75rem;color:var(--muted);margin-top:.5rem;min-height:1rem;text-align:center;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -360,9 +397,13 @@ async function loadTeslaData() {
 }
 
 function updateTeslaCard(data, status) {
-  const bat = document.getElementById('teslaBattery');
-  const sub = document.getElementById('teslaSub');
-  const dot = document.getElementById('teslaDot');
+  const bat      = document.getElementById('teslaBattery');
+  const sub      = document.getElementById('teslaSub');
+  const dot      = document.getElementById('teslaDot');
+  const controls = document.getElementById('teslaControls');
+
+  controls.style.display = 'none';
+
   if (status === 'disconnected' || status === 'error') {
     bat.innerHTML = '—<span class="metric-unit">%</span>';
     sub.innerHTML = '<a href="#" onclick="startTeslaOAuth();return false;" style="color:var(--blue)">🔗 Verbind Tesla</a>';
@@ -373,6 +414,9 @@ function updateTeslaCard(data, status) {
     bat.innerHTML = '💤<span class="metric-unit"></span>';
     sub.textContent = `${data?.display_name || 'Tesla'} slaapt`;
     dot.className = 'metric-dot dot-yellow';
+    controls.style.display = 'flex';
+    document.getElementById('ampsDisplay').textContent = '— A';
+    document.getElementById('limitDisplay').textContent = '—%';
     return;
   }
   if (status === 'no_vehicle') {
@@ -386,13 +430,60 @@ function updateTeslaCard(data, status) {
     bat.innerHTML = `${pct}<span class="metric-unit">%</span>`;
     dot.className = `metric-dot ${pct>80?'dot-green':pct>30?'dot-yellow':'dot-red'}`;
     const states = {
-      Charging: `⚡ Laden — ${cs.charger_power||0} kW · +${cs.charge_rate||0} km/u`,
+      Charging:     `⚡ Laden — ${cs.charger_power||0} kW · +${cs.charge_rate||0} km/u`,
       Complete:     '✅ Volledig geladen',
       Disconnected: '🔌 Niet ingeplugd',
       Stopped:      '⏸ Laden gestopt',
       NoPower:      '⚠️ Geen stroom'
     };
     sub.textContent = states[cs.charging_state] || cs.charging_state;
+
+    // Toon controls met huidige waarden
+    controls.style.display = 'flex';
+    const limitSlider = document.getElementById('limitSlider');
+    const ampsSlider  = document.getElementById('ampsSlider');
+    if (cs.charge_limit_soc) {
+      limitSlider.value = cs.charge_limit_soc;
+      document.getElementById('limitDisplay').textContent = cs.charge_limit_soc + '%';
+    }
+    if (cs.charge_current_request) {
+      ampsSlider.value = cs.charge_current_request;
+      document.getElementById('ampsDisplay').textContent = cs.charge_current_request + ' A';
+    }
+  }
+}
+
+let cmdBusy = false;
+async function sendTeslaCommand(cmd, args) {
+  if (cmdBusy) return;
+  cmdBusy = true;
+  const statusEl = document.getElementById('cmdStatus');
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = '⏳ Bezig…';
+  try {
+    const resp = await fetch(`${TESLA_FN}?action=command`, {
+      method: 'POST',
+      headers: TESLA_HEADERS,
+      body: JSON.stringify({ cmd, args }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✓ Uitgevoerd';
+    } else if (result.error === 'vehicle_asleep') {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '💤 Auto kon niet gewekt worden';
+    } else {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ ' + (result.detail?.response?.reason || result.error || 'Fout');
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Verbindingsfout';
+  } finally {
+    cmdBusy = false;
+    setTimeout(() => { if(statusEl) statusEl.textContent = ''; }, 4000);
   }
 }
 
