@@ -187,54 +187,63 @@
       <div class="metric-value" id="dayCost">—<span class="metric-unit">€</span></div>
       <div class="metric-sub" id="dayCostSub">Start bridge script thuis</div>
     </div>
-    <div class="metric-card" id="teslaCard" style="grid-column: span 2;">
-      <div style="display:grid;grid-template-columns:auto 1px 1fr;gap:0;align-items:start;">
+    <div class="metric-card" id="teslaCard" style="grid-column: span 2; padding: 1.25rem 1.5rem;">
+      <div style="display:flex; gap:2rem; align-items:stretch;">
+
         <!-- Links: batterij info -->
-        <div style="padding-right:1.5rem;">
+        <div style="flex:0 0 140px;">
           <div class="metric-label"><span class="metric-dot" id="teslaDot"></span> Tesla batterij</div>
           <div class="metric-value" id="teslaBattery">—<span class="metric-unit">%</span></div>
           <div class="metric-sub" id="teslaSub"><a href="#" onclick="startTeslaOAuth();return false;" style="color:var(--blue)">🔗 Verbind Tesla</a></div>
         </div>
-        <!-- Divider -->
-        <div id="teslaDivider" style="display:none;background:var(--border);align-self:stretch;"></div>
+
+        <!-- Verticale scheidingslijn -->
+        <div id="teslaDivider" style="display:none; width:1px; background:var(--border); flex-shrink:0;"></div>
+
         <!-- Rechts: laadcontroles -->
-        <div id="teslaControls" style="display:none;padding-left:1.5rem;">
-          <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;font-weight:600;">Laadcontroles</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem 1.5rem;">
-            <!-- Laadlimiet -->
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.35rem;">
-                <span style="font-size:.78rem;color:var(--muted);">Laadlimiet</span>
-                <span id="limitDisplay" style="font-size:.9rem;color:var(--text);font-weight:700;">—%</span>
-              </div>
-              <input type="range" id="limitSlider" min="50" max="100" step="5" value="80"
-                style="width:100%;accent-color:var(--blue);cursor:pointer;height:4px;"
-                oninput="document.getElementById('limitDisplay').textContent=this.value+'%'"
-                onchange="sendTeslaCommand('set_charge_limit',{percent:parseInt(this.value)})"/>
-              <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);margin-top:.2rem;"><span>50%</span><span>80%</span><span>100%</span></div>
+        <div id="teslaControls" style="display:none; flex:1; min-width:0;">
+          <div style="font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-bottom:1rem;">Laadcontroles</div>
+
+          <!-- Laadlimiet -->
+          <div style="margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.4rem;">
+              <span style="font-size:.82rem; color:var(--muted);">Laadlimiet</span>
+              <span id="limitDisplay" style="font-size:.95rem; color:var(--text); font-weight:700;">—%</span>
             </div>
-            <!-- Laadstroom -->
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.35rem;">
-                <span style="font-size:.78rem;color:var(--muted);">Laadstroom</span>
-                <span id="ampsDisplay" style="font-size:.9rem;color:var(--text);font-weight:700;">— A</span>
-              </div>
-              <input type="range" id="ampsSlider" min="6" max="16" step="1" value="16"
-                style="width:100%;accent-color:var(--green);cursor:pointer;height:4px;"
-                oninput="document.getElementById('ampsDisplay').textContent=this.value+' A'"
-                onchange="sendTeslaCommand('set_charging_amps',{charging_amps:parseInt(this.value)})"/>
-              <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);margin-top:.2rem;"><span>6A</span><span>11A</span><span>16A</span></div>
+            <input type="range" id="limitSlider" min="50" max="100" step="5" value="80"
+              style="width:100%; accent-color:var(--blue); cursor:pointer;"
+              oninput="document.getElementById('limitDisplay').textContent=this.value+'%'"
+              onchange="sendTeslaCommand('set_charge_limit',{percent:parseInt(this.value)})"/>
+            <div style="display:flex; justify-content:space-between; font-size:.7rem; color:var(--muted); margin-top:.25rem; padding:0 2px;">
+              <span>50%</span><span>65%</span><span>80%</span><span>100%</span>
             </div>
           </div>
+
+          <!-- Laadstroom -->
+          <div style="margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.4rem;">
+              <span style="font-size:.82rem; color:var(--muted);">Laadstroom</span>
+              <span id="ampsDisplay" style="font-size:.95rem; color:var(--text); font-weight:700;">— A</span>
+            </div>
+            <input type="range" id="ampsSlider" min="6" max="16" step="1" value="16"
+              style="width:100%; accent-color:var(--green); cursor:pointer;"
+              oninput="document.getElementById('ampsDisplay').textContent=this.value+' A'"
+              onchange="sendTeslaCommand('set_charging_amps',{charging_amps:parseInt(this.value)})"/>
+            <div style="display:flex; justify-content:space-between; font-size:.7rem; color:var(--muted); margin-top:.25rem; padding:0 2px;">
+              <span>6 A</span><span>8 A</span><span>11 A</span><span>16 A</span>
+            </div>
+          </div>
+
           <!-- Knoppen + status -->
-          <div style="display:flex;gap:.6rem;margin-top:.9rem;align-items:center;">
+          <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
             <button onclick="sendTeslaCommand('charge_start',{})"
-              style="padding:.45rem 1rem;background:var(--green);color:#000;border:none;border-radius:8px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">▶ Start laden</button>
+              style="padding:.5rem 1.1rem; background:var(--green); color:#000; border:none; border-radius:8px; font-size:.82rem; font-weight:700; cursor:pointer; white-space:nowrap;">▶ Start laden</button>
             <button onclick="sendTeslaCommand('charge_stop',{})"
-              style="padding:.45rem 1rem;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;">⏸ Stop laden</button>
-            <span id="cmdStatus" style="font-size:.78rem;color:var(--muted);margin-left:.25rem;"></span>
+              style="padding:.5rem 1.1rem; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:8px; font-size:.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">⏸ Stop laden</button>
+            <span id="cmdStatus" style="font-size:.78rem; color:var(--muted);"></span>
           </div>
         </div>
+
       </div>
     </div>
   </div>
