@@ -516,13 +516,16 @@ async function sendTeslaCommand(cmd, args) {
       statusEl.textContent = '⏳ Tesla zegt: wacht even en probeer opnieuw';
     } else {
       const reason = result.reason || result.error || '';
+      // Debug: toon ruwe response tijdelijk
+      const raw = JSON.stringify(result.detail?.response ?? result.detail ?? result);
+      console.warn('Tesla command mislukt:', raw);
       const friendly = {
         'charging': 'Auto laadt niet actief',
         'not_charging': 'Auto laadt niet actief',
         'already_set': 'Waarde al ingesteld',
         'over_limit': 'Boven toegestane limiet',
         'could_not_wake_buses': 'Auto kon niet gewekt worden',
-      }[reason?.toLowerCase()] || (reason || 'Onbekende fout');
+      }[reason?.toLowerCase()] || reason || raw.slice(0,80);
       statusEl.style.color = 'var(--red)';
       statusEl.textContent = '✗ ' + friendly;
     }
