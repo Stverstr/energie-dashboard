@@ -294,15 +294,12 @@ async function saveSettingsToSupabase() {
   }
 }
 
-// ─── TESLA ───────────────────────────────────────────────────────────────────
-const TESLA_CLIENT_ID     = 'a481468a-923f-4a4b-87da-f8f22ba20071';
-const TESLA_CLIENT_SECRET = 'ta-secret.J1_Bn\x26OPloO+-c+g';
-const TESLA_REDIRECT_URI  = 'https://stverstr.github.io/energie-dashboard/';
-const TESLA_AUTH_URL      = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/authorize';
-const TESLA_TOKEN_URL     = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token';
-const TESLA_API_BASE      = 'https://fleet-api.prd.eu.vn.cloud.tesla.com';
-
-let teslaToken = null;
+// ─── TESLA (via Supabase Edge Function — geen CORS issues) ───────────────────
+const TESLA_CLIENT_ID    = 'a481468a-923f-4a4b-87da-f8f22ba20071';
+const TESLA_REDIRECT_URI = 'https://stverstr.github.io/energie-dashboard/';
+const TESLA_AUTH_URL     = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/authorize';
+const TESLA_FN           = `${SUPA_URL}/functions/v1/tesla-auth`;
+const TESLA_HEADERS      = { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' };
 
 // PKCE helpers
 function genVerifier() {
@@ -334,68 +331,28 @@ async function handleTeslaCallback(code, state) {
   if (state !== sessionStorage.getItem('ts')) return;
   const verifier = sessionStorage.getItem('tv');
   try {
-    const resp = await fetch(TESLA_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code', client_id: TESLA_CLIENT_ID,
-        client_secret: TESLA_CLIENT_SECRET, code,
-        redirect_uri: TESLA_REDIRECT_URI, code_verifier: verifier
-      })
+    const resp = await fetch(`${TESLA_FN}?action=exchange`, {
+      method: 'POST', headers: TESLA_HEADERS,
+      body: JSON.stringify({ code, code_verifier: verifier })
     });
-    const tok = await resp.json();
-    if (!tok.access_token) { console.error('Tesla token fout:', tok); return; }
-    teslaToken = tok.access_token;
-    await supa.from('dashboard_settings').update({ tesla_refresh_token: tok.refresh_token }).eq('id',1);
+    const result = await resp.json();
+    if (!result.ok) { console.error('Tesla exchange fout:', result); return; }
     window.history.replaceState({}, '', window.location.pathname);
     await loadTeslaData();
   } catch(e) { console.error('Tesla callback fout:', e); }
 }
 
-async function refreshTeslaToken() {
-  const { data } = await supa.from('dashboard_settings').select('tesla_refresh_token').eq('id',1).single();
-  if (!data?.tesla_refresh_token) return false;
-  try {
-    const resp = await fetch(TESLA_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token', client_id: TESLA_CLIENT_ID,
-        client_secret: TESLA_CLIENT_SECRET, refresh_token: data.tesla_refresh_token
-      })
-    });
-    const tok = await resp.json();
-    if (!tok.access_token) return false;
-    teslaToken = tok.access_token;
-    if (tok.refresh_token) await supa.from('dashboard_settings').update({ tesla_refresh_token: tok.refresh_token }).eq('id',1);
-    return true;
-  } catch(e) { return false; }
-}
-
 async function loadTeslaData() {
-  if (!teslaToken) {
-    const ok = await refreshTeslaToken();
-    if (!ok) { updateTeslaCard(null,'disconnected'); return; }
-  }
   try {
-    const vResp = await fetch(`${TESLA_API_BASE}/api/1/vehicles`, {
-      headers: { Authorization: `Bearer ${teslaToken}` }, signal: AbortSignal.timeout(10000)
+    const resp = await fetch(`${TESLA_FN}?action=vehicle`, {
+      headers: TESLA_HEADERS, signal: AbortSignal.timeout(20000)
     });
-    const vJson = await vResp.json();
-    const vehicles = vJson.response;
-    if (!vehicles?.length) { updateTeslaCard(null,'no_vehicle'); return; }
-    const v = vehicles[0];
-
-    const dResp = await fetch(
-      `${TESLA_API_BASE}/api/1/vehicles/${v.id}/vehicle_data?endpoints=charge_state`,
-      { headers: { Authorization: `Bearer ${teslaToken}` }, signal: AbortSignal.timeout(10000) }
-    );
-    const dJson = await dResp.json();
-    if (dJson.response?.charge_state) {
-      updateTeslaCard(dJson.response, 'ok');
-    } else {
-      updateTeslaCard(v, 'sleeping');
-    }
+    const result = await resp.json();
+    if (result.error === 'no_token') { updateTeslaCard(null,'disconnected'); return; }
+    if (result.status === 'sleeping') { updateTeslaCard({ display_name: result.name },'sleeping'); return; }
+    if (result.status === 'no_vehicles') { updateTeslaCard(null,'no_vehicle'); return; }
+    if (result.status === 'ok') { updateTeslaCard(result.data,'ok'); return; }
+    updateTeslaCard(null,'disconnected');
   } catch(e) {
     console.warn('Tesla laden mislukt:', e.message);
     updateTeslaCard(null,'error');
@@ -609,30 +566,67 @@ async function loadHomeWizard() {
       document.getElementById('powerDot').className = 'metric-dot dot-green';
     }
   } catch(e) {
+    console.warn('HomeWizard directe fetch mislukt:', e.name, e.message);
+
+    // Fallback: probeer meest recente meting uit Supabase (gevoed door bridge script)
+    try {
+      const fbResp = await fetch(
+        `${SUPA_URL}/rest/v1/energy_readings?order=ts.desc&limit=1&select=ts,power_w`,
+        { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
+          signal: AbortSignal.timeout(5000) }
+      );
+      if (fbResp.ok) {
+        const fbData = await fbResp.json();
+        if (fbData?.length) {
+          const row = fbData[0];
+          const ageSec = Math.round((Date.now() - new Date(row.ts).getTime()) / 1000);
+          const ageStr = ageSec < 120 ? `${ageSec}s` : `${Math.round(ageSec/60)}min`;
+          netPowerW = row.power_w ?? 0;
+          const w = Math.round(netPowerW);
+          if (w < 0) {
+            setMetric('powerNow', Math.abs(w).toString(), 'W');
+            document.getElementById('powerSub').textContent = `↑ ${Math.abs(w)} W injectie (bridge, ${ageStr} oud)`;
+            document.getElementById('powerDot').className = 'metric-dot dot-green';
+          } else if (w > 0) {
+            setMetric('powerNow', w.toString(), 'W');
+            document.getElementById('powerSub').textContent = `↓ ${w} W afname (bridge, ${ageStr} oud)`;
+            document.getElementById('powerDot').className = 'metric-dot dot-red';
+          } else {
+            setMetric('powerNow', '0', 'W');
+            document.getElementById('powerSub').textContent = `Balans nul (bridge, ${ageStr} oud)`;
+            document.getElementById('powerDot').className = 'metric-dot dot-green';
+          }
+          notice.style.display = 'none';
+          return;
+        }
+      }
+    } catch(fb) { console.warn('Supabase fallback ook mislukt:', fb.message); }
+
+    // Geen data beschikbaar
     netPowerW = null;
     setMetric('powerNow', '!', '');
-    document.getElementById('powerSub').textContent = 'Niet bereikbaar – zie ↓';
+    document.getElementById('powerSub').textContent = 'Niet bereikbaar';
     document.getElementById('powerDot').className = 'metric-dot';
 
     const ip = settings.hwIp;
     let detail = '';
     if (e.name === 'AbortError') {
       detail = `<strong>Timeout</strong> — <code>${ip}</code> antwoordt niet binnen 5 seconden.<br><br>
-        Mogelijke oorzaken: je bent niet op thuisnetwerk, of het apparaat is offline.`;
+        Mogelijke oorzaken: je bent niet op je thuisnetwerk, of het apparaat is offline.<br><br>
+        💡 <strong>Tip:</strong> Installeer <code>hw_bridge.py</code> thuis om ook op afstand je netbalans te zien.`;
     } else if (e.message && e.message.startsWith('HTTP ')) {
       detail = `<strong>HTTP-fout ${e.message}</strong> van <code>${ip}</code>.<br><br>
-        De API geeft een foutcode terug. Controleer of de lokale API actief is in de HomeWizard app.`;
+        Controleer of de lokale API actief is in de HomeWizard app.`;
     } else {
-      // TypeError: Failed to fetch → kan CORS of netwerk zijn
       detail = `<strong>Verbindingsfout</strong> (<em>${e.name}</em>) naar <code>${ip}</code>.<br><br>
         Meest waarschijnlijke oorzaken:<br>
         <strong>1.</strong> Je bent niet op je thuisnetwerk (WiFi thuis).<br>
-        <strong>2.</strong> Mixed-content nog niet toegestaan in Chrome — klik op het slotje 🔒 in de adresbalk → Site-instellingen → Onveilige inhoud → Toestaan.<br>
-        <strong>3.</strong> IP-adres incorrect — <a href="#" onclick="openSettings();return false;" style="color:var(--blue)">wijzig via ⚙️</a>.`;
+        <strong>2.</strong> Mixed-content nog niet toegestaan in Chrome — klik op het slotje 🔒 → Site-instellingen → Onveilige inhoud → Toestaan.<br>
+        <strong>3.</strong> IP-adres incorrect — <a href="#" onclick="openSettings();return false;" style="color:var(--blue)">wijzig via ⚙️</a>.<br><br>
+        💡 <strong>Geen van bovenstaande?</strong> Installeer het bridge script om ook op afstand live data te zien.`;
     }
     notice.innerHTML = `<strong>⚠️ HomeWizard niet bereikbaar</strong><br><br>${detail}`;
     notice.style.display = 'block';
-    console.warn('HomeWizard fout:', e.name, e.message);
   }
 }
 
